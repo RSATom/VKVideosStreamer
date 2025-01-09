@@ -64,11 +64,13 @@ static bool LoadConfig(Config* config)
         config_lookup_string(&config, "key", &key);
 
         if(source && key) {
-            loadedConfig.reStreamers.emplace_back(
-                Config::ReStreamer {
+            g_autofree gchar* uniqueId = g_uuid_string_random();
+            loadedConfig.reStreamers.emplace(
+                std::string(uniqueId),
+                Config::ReStreamer(
                     source,
                     key,
-                    true });
+                    true));
         }
 
         config_setting_t* streamersConfig = config_lookup(&config, "streamers");
@@ -90,11 +92,13 @@ static bool LoadConfig(Config* config)
                 config_setting_lookup_bool(streamerConfig, "enable", &enabled);
 
                 if(source && key) {
-                    loadedConfig.reStreamers.emplace_back(
-                        Config::ReStreamer {
+                    g_autofree gchar* uniqueId = g_uuid_string_random();
+                    loadedConfig.reStreamers.emplace(
+                        std::string(uniqueId),
+                        Config::ReStreamer(
                             source,
                             key,
-                            enabled != FALSE });
+                            enabled != FALSE));
                 }
             }
         }
@@ -181,7 +185,9 @@ int main(int argc, char *argv[])
 
     std::deque<ReStreamContext> contexts;
 
-    for(const Config::ReStreamer& reStreamer: config.reStreamers) {
+    for(const auto& pair: config.reStreamers) {
+        const Config::ReStreamer& reStreamer = pair.second;
+
         if(!reStreamer.enabled)
             continue;
 
