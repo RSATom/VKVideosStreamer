@@ -1,19 +1,27 @@
 streamers: (
   {
-    source: "rtsp://localhost:8554/white",
-#    key: "0000000000000_0000000000000_xxxxxxxxxx"
-#    enable: true
+    source: "rtsp://localhost:8554/white"
+    key: "0000000000000_0000000000000_xxxxxxxxxx"
+    enable: false
   },
   {
-    source: "rtsp://localhost:8554/blue",
-#    key: "0000000000000_0000000000000_xxxxxxxxxx"
-#    enable: true
+    source: "rtsp://localhost:8554/blue"
+    key: "0000000000000_0000000000000_xxxxxxxxxx"
+    enable: false
   },
   {
-    source: "rtsp://localhost:8554/red",
-#    key: "0000000000000_0000000000000_xxxxxxxxxx"
-#    enable: true
+    source: "rtsp://localhost:8554/red"
+    key: "0000000000000_0000000000000_xxxxxxxxxx"
+    enable: false
   }
 )
+
+http-port: 4080
+
+#loopback-only: false
+
+// absolute or relative (based on %SNAP_COMMON% in case of snap package, or current dir in other cases) path
+// to custom web client
+#www-root: "www"
 
 log-level: 3
