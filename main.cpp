@@ -8,6 +8,10 @@
 
 #include "WebRTSP/Http/Config.h"
 #include "WebRTSP/Http/HttpMicroServer.h"
+#include "WebRTSP/Signalling/Config.h"
+#include "WebRTSP/Signalling/WsServer.h"
+#include "WebRTSP/Signalling/ServerSession.h"
+#include "WebRTSP/RtStreaming/GstRtStreaming/GstReStreamer2.h"
 
 #include "Log.h"
 #include "Defines.h"
@@ -25,13 +29,17 @@ enum {
 static const auto Log = ReStreamerLog;
 
 
-static bool LoadConfig(http::Config* httpConfig, Config* config)
+static bool LoadConfig(
+    http::Config* httpConfig,
+    signalling::Config* wsConfig,
+    Config* config)
 {
     const std::deque<std::string> configDirs = ::ConfigDirs();
     if(configDirs.empty())
         return false;
 
     http::Config loadedHttpConfig = *httpConfig;
+    signalling::Config loadedWsConfig = *wsConfig;
     Config loadedConfig = *config;
 
     for(const std::string& configDir: configDirs) {
@@ -76,6 +84,11 @@ static bool LoadConfig(http::Config* httpConfig, Config* config)
         int httpPort;
         if(CONFIG_TRUE == config_lookup_int(&config, "http-port", &httpPort)) {
             loadedHttpConfig.port = static_cast<unsigned short>(httpPort);
+        }
+
+        int wsPort;
+        if(CONFIG_TRUE == config_lookup_int(&config, "ws-port", &wsPort)) {
+            loadedWsConfig.port = static_cast<unsigned short>(wsPort);
         }
 
         const char* source = nullptr;
@@ -197,6 +210,33 @@ void ScheduleStartRestreawm(const Config::ReStreamer& reStreamer, ReStreamContex
         });
 }
 
+typedef std::map<std::string, std::unique_ptr<GstStreamingSource>> ReStreamers;
+
+static std::unique_ptr<WebRTCPeer> CreateWebRTCPeer(
+    const ReStreamers& reStreamers,
+    const std::string& uri) noexcept
+{
+    auto streamerIt = reStreamers.find(uri);
+    if(streamerIt != reStreamers.end()) {
+        return streamerIt->second->createPeer();
+    } else
+        return nullptr;
+}
+
+std::unique_ptr<ServerSession> CreateWebRTSPSession(
+    const WebRTCConfigPtr& webRTCConfig,
+    const ReStreamers& reStreamers,
+    const rtsp::Session::SendRequest& sendRequest,
+    const rtsp::Session::SendResponse& sendResponse) noexcept
+{
+    return
+        std::make_unique<ServerSession>(
+            webRTCConfig,
+            std::bind(CreateWebRTCPeer, std::ref(reStreamers), std::placeholders::_1),
+            sendRequest,
+            sendResponse);
+}
+
 int main(int argc, char *argv[])
 {
     http::Config httpConfig {
@@ -204,6 +244,8 @@ int main(int argc, char *argv[])
         .opaque = "VKVideoStreamer",
         .apiPrefix = rest::ApiPrefix,
     };
+
+    signalling::Config wsConfig;
 
     Config initialConfig {};
 
@@ -216,18 +258,26 @@ int main(int argc, char *argv[])
     }
 #endif
 
-    if(!LoadConfig(&httpConfig, &initialConfig))
+    if(!LoadConfig(&httpConfig, &wsConfig, &initialConfig))
         return -1;
+
 
     gst_init(&argc, &argv);
 
     GMainLoopPtr loopPtr(g_main_loop_new(nullptr, FALSE));
     GMainLoop* loop = loopPtr.get();
 
+    ReStreamers reStreamers;
     std::deque<ReStreamContext> contexts;
 
     for(const auto& pair: initialConfig.reStreamers) {
         const Config::ReStreamer& reStreamer = pair.second;
+
+        reStreamers.emplace(
+            pair.first,
+            std::make_unique<GstReStreamer2>(
+                pair.second.source,
+                pair.second.forceH264ProfileLevelId));
 
         if(!reStreamer.enabled)
             continue;
@@ -240,7 +290,11 @@ int main(int argc, char *argv[])
     std::unique_ptr<http::MicroServer> httpServerPtr;
     if(httpConfig.port) {
         std::string configJs =
-            fmt::format("const APIPort = {};\r\n", httpConfig.port);
+            fmt::format(
+                "const APIPort = {};\r\n"
+                "const WebRTSPPort = {};\r\n",
+                httpConfig.port,
+                wsConfig.port);
         httpServerPtr =
             std::make_unique<http::MicroServer>(
                 httpConfig,
@@ -255,6 +309,19 @@ int main(int argc, char *argv[])
         httpServerPtr->init();
     }
 
+    std::unique_ptr<signalling::WsServer> wsServerPtr;
+    if(wsConfig.port) {
+        wsServerPtr = std::make_unique<signalling::WsServer>(
+            wsConfig,
+            loop,
+            std::bind(
+                CreateWebRTSPSession,
+                std::make_shared<WebRTCConfig>(),
+                std::ref(reStreamers),
+                std::placeholders::_1,
+                std::placeholders::_2));
+        wsServerPtr->init();
+    }
 
     SSDPContext ssdpContext;
 #ifdef SNAPCRAFT_BUILD
