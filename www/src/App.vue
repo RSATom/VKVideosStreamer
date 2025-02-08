@@ -15,7 +15,6 @@ const streamers = useStreamersStore()
     <template #title>
       <span
         class="title-subtitle"
-        :class="{ 'disabled-title-subtitle': !streamer.enabled }"
         :title="streamer.sourceUrl"
       >
         {{ streamer.sourceUrl }}
@@ -24,11 +23,21 @@ const streamers = useStreamersStore()
     <template #subtitle>
       <span
         class="title-subtitle"
-        :class="{ 'disabled-title-subtitle': !streamer.enabled }"
         :title="streamer.description"
       >
         {{ streamer.description }}
       </span>
+    </template>
+    <template #footer>
+      <div class="card-footer">
+        <Button
+          :icon="streamer.enabled ? 'pi pi-stop-circle' : 'pi pi-play-circle'"
+          :loading="streamer.sendingUpdate"
+          variant="text"
+          rounded
+          :severity="streamer.enabled ? 'warn' : 'success'"
+          @click="streamers.toggleStreaming(streamer.id)"/>
+      </div>
     </template>
   </Card>
 </template>
@@ -52,7 +61,7 @@ const streamers = useStreamersStore()
     text-overflow:ellipsis;
   }
 
-  .disabled-title-subtitle {
-    text-decoration: line-through;
+  .card-footer {
+    text-align: center;
   }
 </style>
